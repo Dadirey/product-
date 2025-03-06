@@ -12,25 +12,39 @@
     />
   </head>
   <body class="bg-gradient-to-r from-purple-50 to-blue-100 font-sans">
-    <div class="container mx-auto p-6 shadow-lg rounded-lg bg-white my-8">
+    <div class="container mx-auto p-6 shadow-lg rounded-lg bg-white my-8 text-center">
       <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">
         Sales Dashboard
       </h1>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-center">
+      
+      <!-- Controls -->
+      <div class="flex flex-col items-center space-y-4 md:flex-row md:space-x-6 md:justify-center">
         <div>
           <label for="csvFile" class="block text-gray-700 text-sm font-bold mb-2">
             Choose CSV File:
           </label>
-          <input type="file" id="csvFile" accept=".csv" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
+          <input type="file" id="csvFile" accept=".csv" class="px-3 py-2 border rounded shadow focus:outline-none" />
         </div>
         <div>
           <label for="search" class="block text-gray-700 text-sm font-bold mb-2">
             Search:
           </label>
-          <input type="text" id="search" placeholder="Product Name or S/N" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
+          <input type="text" id="search" placeholder="Product Name or S/N" class="px-3 py-2 border rounded shadow focus:outline-none" />
+        </div>
+        <div>
+          <label for="chartType" class="block text-gray-700 text-sm font-bold mb-2">
+            Select Chart Type:
+          </label>
+          <select id="chartType" class="px-3 py-2 border rounded shadow focus:outline-none">
+            <option value="bar">Bar Chart</option>
+            <option value="line">Line Chart</option>
+            <option value="pie">Pie Chart</option>
+          </select>
         </div>
       </div>
-      <div class="overflow-x-auto bg-white rounded-lg shadow-md">
+
+      <!-- Table -->
+      <div class="mt-6 overflow-x-auto bg-white rounded-lg shadow-md">
         <table class="min-w-full">
           <thead id="tableHead" class="bg-gray-50"></thead>
           <tbody id="tableBody" class="divide-y divide-gray-200">
@@ -40,15 +54,43 @@
           </tbody>
         </table>
       </div>
-      <div class="mt-8">
-        <canvas id="salesChart"></canvas>
+
+      <!-- Chart -->
+      <div class="mt-8 flex justify-center">
+        <canvas id="salesChart" class="max-w-lg"></canvas>
       </div>
     </div>
+
     <script>
       let originalData = [];
       let filteredData = [];
-      let selectedRow = null;
+      let selectedRowId = localStorage.getItem("selectedRowId") || null;
       let chartInstance = null;
+
+      window.addEventListener("DOMContentLoaded", () => {
+        const savedData = localStorage.getItem("csvData");
+        const savedSearchQuery = localStorage.getItem("searchQuery") || "";
+        const savedChartType = localStorage.getItem("chartType") || "bar";
+
+        document.getElementById("chartType").value = savedChartType;
+
+        if (savedData) {
+          originalData = JSON.parse(savedData);
+          filteredData = [...originalData];
+
+          document.getElementById("search").value = savedSearchQuery;
+          if (savedSearchQuery) {
+            filteredData = originalData.filter(row =>
+              Object.values(row).some(value =>
+                value.toString().toLowerCase().includes(savedSearchQuery)
+              )
+            );
+          }
+
+          displayData(filteredData);
+          updateChart(filteredData, savedChartType);
+        }
+      });
 
       document.getElementById("csvFile").addEventListener("change", (event) => {
         const file = event.target.files[0];
@@ -59,12 +101,21 @@
             header: true,
             skipEmptyLines: true,
             complete: (results) => {
-              originalData = results.data;
+              if (results.data.length === 0 || !Object.keys(results.data[0]).length) {
+                alert("Invalid CSV format! Ensure it has a header row.");
+                return;
+              }
+              originalData = results.data.map(row => ({
+                "Item Name": row["item name"] || "Unknown",
+                "Unit": row["Unit"] || "",
+                "Quantity": parseInt(row["Qty"], 10) || 0,
+                "Price ($)": `$${parseFloat(row["U.Price"].replace("$", "").trim()) || 0}`
+              })).slice(0, 20);
               filteredData = [...originalData];
-              localStorage.setItem("csvData", JSON.stringify(originalData)); // Save to localStorage
+              localStorage.setItem("csvData", JSON.stringify(originalData));
               displayData(filteredData);
-              updateChart(filteredData);
-            },
+              updateChart(filteredData, document.getElementById("chartType").value);
+            }
           });
         };
         reader.readAsText(file);
@@ -72,76 +123,66 @@
 
       document.getElementById("search").addEventListener("input", () => {
         const query = document.getElementById("search").value.toLowerCase();
-        filteredData = originalData.filter((row) =>
-          Object.values(row).some((value) =>
+        localStorage.setItem("searchQuery", query);
+        filteredData = originalData.filter(row =>
+          Object.values(row).some(value =>
             value.toString().toLowerCase().includes(query)
           )
-        );
+        ).slice(0, 20);
         displayData(filteredData);
-        updateChart(filteredData);
+        updateChart(filteredData, document.getElementById("chartType").value);
+      });
+
+      document.getElementById("chartType").addEventListener("change", () => {
+        const chartType = document.getElementById("chartType").value;
+        localStorage.setItem("chartType", chartType);
+        updateChart(filteredData, chartType);
       });
 
       function displayData(data) {
         const tableBody = document.getElementById("tableBody");
-        tableBody.innerHTML =
-          data.length === 0
-            ? `<tr><td colspan="6" class="text-center py-4">No matching data found.</td></tr>`
-            : data.map((row, index) => `
-                <tr class="cursor-pointer hover:bg-gray-100" onclick="handleRowClick(this, ${index})">
-                  ${Object.values(row).map(value => `<td class="px-6 py-4 text-sm text-gray-900">${value}</td>`).join("")}
-                </tr>
-              `).join("");
-      }
-
-      function handleRowClick(rowElement, index) {
-        if (selectedRow) {
-          selectedRow.classList.remove("bg-blue-200");
+        if (data.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4">No matching data found.</td></tr>`;
+          return;
         }
-        rowElement.classList.add("bg-blue-200");
-        selectedRow = rowElement;
+
+        const headers = Object.keys(data[0]);
+        document.getElementById("tableHead").innerHTML = `
+          <tr>
+            ${headers.map(header => `<th class="px-6 py-3 bg-gray-200">${header}</th>`).join("")}
+          </tr>`;
+
+        tableBody.innerHTML = data.map((row, index) => `
+          <tr class="cursor-pointer hover:bg-gray-100 ${index == selectedRowId ? 'bg-blue-200' : ''}" onclick="handleRowClick(${index})">
+            ${headers.map(key => `
+              <td class="px-6 py-4 text-sm text-gray-900">
+                ${row[key]}
+              </td>`).join("")}
+          </tr>`).join("");
       }
 
-      function updateChart(data) {
-        const labels = data.map((row, index) => row[Object.keys(row)[0]] || `Item ${index + 1}`);
-        const values = data.map((row) => parseFloat(row[Object.keys(row)[1]]) || 0);
+      function handleRowClick(index) {
+        selectedRowId = index;
+        localStorage.setItem("selectedRowId", index);
+        displayData(filteredData);
+      }
+
+      function updateChart(data, chartType) {
+        if (data.length === 0) return;
+
+        const labels = data.map(row => row["Item Name"]);
+        const values = data.map(row => parseFloat(row["Price ($)"].replace("$", "")));
 
         const ctx = document.getElementById("salesChart").getContext("2d");
         if (chartInstance) {
           chartInstance.destroy();
         }
         chartInstance = new Chart(ctx, {
-          type: "bar",
-          data: {
-            labels: labels,
-            datasets: [{
-              label: "Sales Data",
-              data: values,
-              backgroundColor: values.map(value => `hsl(${(value / Math.max(...values)) * 120}, 80%, 60%)`),
-              borderColor: "#4A90E2",
-              borderWidth: 1,
-            }],
-          },
-          options: {
-            responsive: true,
-            scales: {
-              y: {
-                beginAtZero: true,
-              },
-            },
-          },
+          type: chartType,
+          data: { labels: labels, datasets: [{ label: "Sales Price ($)", data: values, backgroundColor: "#4A90E2", borderColor: "#4A90E2", borderWidth: 1 }] },
+          options: { responsive: true, scales: { y: { beginAtZero: true } } },
         });
       }
-
-      // Load saved data on refresh
-      window.addEventListener("load", () => {
-        const savedData = localStorage.getItem("csvData");
-        if (savedData) {
-          originalData = JSON.parse(savedData);
-          filteredData = [...originalData];
-          displayData(filteredData);
-          updateChart(filteredData);
-        }
-      });
     </script>
   </body>
 </html>
