@@ -10,80 +10,527 @@
       href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
       rel="stylesheet"
     />
+    <style>
+      .chart-container {
+        height: 400px;
+        margin-top: 2rem;
+      }
+
+      .loader {
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 2s linear infinite;
+        margin: 20px auto;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
+
   <body class="bg-gradient-to-r from-purple-50 to-blue-100 font-sans">
     <div class="container mx-auto p-6 shadow-lg rounded-lg bg-white my-8">
+      <!-- Header -->
       <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">
         Sales Dashboard
       </h1>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-center">
+
+      <!-- File Upload and Search -->
+      <div
+        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-center"
+      >
         <div>
-          <label for="csvFile" class="block text-gray-700 text-sm font-bold mb-2">
-            Choose CSV File:
-          </label>
-          <input type="file" id="csvFile" accept=".csv" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
+          <label
+            for="csvFile"
+            class="block text-gray-700 text-sm font-bold mb-2"
+            >Choose CSV File:</label
+          >
+          <input
+            type="file"
+            id="csvFile"
+            accept=".csv"
+            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+          />
         </div>
+
         <div>
-          <label for="search" class="block text-gray-700 text-sm font-bold mb-2">
-            Search:
-          </label>
-          <input type="text" id="search" placeholder="Product Name or S/N" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
+          <label for="search" class="block text-gray-700 text-sm font-bold mb-2"
+            >Search:</label
+          >
+          <input
+            type="text"
+            id="search"
+            placeholder="Product Name or S/N"
+            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+          />
+        </div>
+
+        <div>
+          <label
+            for="chartType"
+            class="block text-gray-700 text-sm font-bold mb-2"
+            >Chart Type:</label
+          >
+          <select
+            id="chartType"
+            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+          >
+            <option value="bar">Bar Chart</option>
+            <option value="line">Line Chart</option>
+            <option value="pie">Pie Chart</option>
+            <option value="doughnut">Doughnut Chart</option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            for="colorSaturation"
+            class="block text-gray-700 text-sm font-bold mb-2"
+            >Color Saturation:</label
+          >
+          <input
+            type="range"
+            id="colorSaturation"
+            min="0"
+            max="100"
+            value="50"
+            class="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer"
+          />
         </div>
       </div>
+
+      <!-- Loading Spinner -->
+      <div id="loading" class="hidden">
+        <div class="loader"></div>
+        <p class="text-center text-gray-600">Loading data...</p>
+      </div>
+
+      <!-- Error Message -->
+      <div
+        id="error-message"
+        class="text-red-500 text-center mb-4 hidden"
+      ></div>
+
+      <!-- Table -->
       <div class="overflow-x-auto bg-white rounded-lg shadow-md">
         <table class="min-w-full">
-          <thead id="tableHead" class="bg-gray-50"></thead>
+          <thead id="tableHead" class="bg-gray-50">
+            <!-- Table headers will be dynamically generated here -->
+          </thead>
           <tbody id="tableBody" class="divide-y divide-gray-200">
+            <!-- Table rows will be dynamically generated here -->
             <tr>
               <td colspan="6" class="text-center py-4">No data loaded yet.</td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      <!-- Pagination -->
+      <div id="pagination" class="flex justify-center gap-2 mt-4">
+        <!-- Pagination buttons will be dynamically generated here -->
+      </div>
+
+      <!-- Chart -->
+      <div class="chart-container">
+        <canvas
+          id="chart"
+          role="img"
+          aria-label="Data Visualization Chart"
+        ></canvas>
+      </div>
+
+      <button
+        onclick="exportData()"
+        class="mt-4 p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 block mx-auto"
+      >
+        Export Data as CSV
+      </button>
     </div>
+
     <script>
       let originalData = [];
       let filteredData = [];
-      
-      document.getElementById("csvFile").addEventListener("change", (event) => {
+      let currentPage = 1;
+      const rowsPerPage = 10;
+      let colorSaturation = 50; // Initial saturation
+
+      const setLoading = (isLoading) =>
+        document
+          .getElementById("loading")
+          .classList.toggle("hidden", !isLoading);
+      const displayError = (message) => {
+        const errorDiv = document.getElementById("error-message");
+        errorDiv.textContent = message;
+        errorDiv.classList.remove("hidden");
+      };
+      const clearError = () => {
+        document.getElementById("error-message").textContent = "";
+        document.getElementById("error-message").classList.add("hidden");
+      };
+
+      const handleFileChange = (event) => {
         const file = event.target.files[0];
         if (!file) return;
+
+        clearError();
+        setLoading(true);
+
         const reader = new FileReader();
         reader.onload = (e) => {
-          Papa.parse(e.target.result, {
+          const csv = e.target.result;
+          Papa.parse(csv, {
+            delimiter: ",",
             header: true,
             skipEmptyLines: true,
             complete: (results) => {
+              setLoading(false);
+              if (results.errors.length > 0) {
+                console.error("CSV Parsing Errors:", results.errors);
+                displayError("Error parsing CSV file. Check the file format.");
+                return;
+              }
+
+              if (
+                results.data.length > 0 &&
+                results.data[0]["s/n"] === undefined
+              ) {
+                results.data.shift();
+              }
+
               originalData = results.data;
               filteredData = [...originalData];
+              generateTableHeaders(Object.keys(originalData[0]));
               displayData(filteredData);
+              setupPagination(filteredData);
+            },
+            error: (error) => {
+              setLoading(false);
+              console.error("CSV Parsing Error:", error);
+              displayError("An error occurred while parsing the CSV file.");
             },
           });
         };
+        reader.onerror = () => {
+          setLoading(false);
+          displayError("Failed to read the file.");
+        };
         reader.readAsText(file);
-      });
+      };
 
-      document.getElementById("search").addEventListener("input", () => {
-        const query = document.getElementById("search").value.toLowerCase();
-        filteredData = originalData.filter((row) =>
-          Object.values(row).some((value) =>
-            value.toString().toLowerCase().includes(query)
-          )
+      const generateTableHeaders = (headers) => {
+        const tableHead = document.getElementById("tableHead");
+        tableHead.innerHTML =
+          "<tr>" +
+          headers
+            .map(
+              (header) => `
+                <th onclick="sortTable('${header}')"
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                    ${header} <span id="${header}-sort-indicator"></span>
+                </th>
+            `
+            )
+            .join("") +
+          "</tr>";
+      };
+
+      let currentSortColumn = null;
+      let sortAscending = true;
+
+      const sortTable = (column) => {
+        if (currentSortColumn === column) {
+          sortAscending = !sortAscending;
+        } else {
+          currentSortColumn = column;
+          sortAscending = true;
+        }
+
+        document
+          .querySelectorAll('[id$="-sort-indicator"]')
+          .forEach((span) => (span.textContent = ""));
+        const sortIndicator = document.getElementById(
+          `${column}-sort-indicator`
         );
-        displayData(filteredData);
-      });
+        sortIndicator.textContent = sortAscending ? " ▲" : " ▼";
 
-      function displayData(data) {
+        filteredData.sort((a, b) => {
+          const valueA = a[column];
+          const valueB = b[column];
+
+          if (valueA < valueB) return sortAscending ? -1 : 1;
+          if (valueA > valueB) return sortAscending ? 1 : -1;
+          return 0;
+        });
+
+        displayData(filteredData);
+        setupPagination(filteredData);
+      };
+
+      const handleSearchInput = () => {
+        const query = document.getElementById("search").value.toLowerCase();
+        filteredData = originalData.filter(
+          (row) =>
+            row["productname"].toLowerCase().includes(query) ||
+            row["s/n"].toLowerCase().includes(query)
+        );
+        currentPage = 1;
+        displayData(filteredData);
+        setupPagination(filteredData);
+      };
+
+      const displayData = (data) => {
         const tableBody = document.getElementById("tableBody");
         tableBody.innerHTML =
           data.length === 0
             ? `<tr><td colspan="6" class="text-center py-4">No matching data found.</td></tr>`
-            : data.map(row => `
-                <tr>
-                  ${Object.values(row).map(value => `<td class="px-6 py-4 text-sm text-gray-900">${value}</td>`).join("")}
-                </tr>
-              `).join("");
-      }
+            : data
+                .slice(
+                  (currentPage - 1) * rowsPerPage,
+                  currentPage * rowsPerPage
+                )
+                .map(
+                  (row) => `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["s/n"]}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["productname"]}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["Unit"]}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["product_quantity"]}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["Unit Price"]}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${row["Amount"]}</td>
+                    </tr>
+                `
+                )
+                .join("");
+        updateChart(data);
+      };
+
+      const setupPagination = (data) => {
+        const pagination = document.getElementById("pagination");
+        pagination.innerHTML = "";
+
+        const pageCount = Math.ceil(data.length / rowsPerPage);
+
+        if (pageCount <= 1) return;
+
+        for (let i = 1; i <= pageCount; i++) {
+          const button = document.createElement("button");
+          button.innerText = i;
+          button.className = `px-4 py-2 rounded-lg ${
+            currentPage === i
+              ? "bg-blue-500 text-white"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+          }`;
+          button.addEventListener("click", () => {
+            currentPage = i;
+            displayData(data);
+            setupPagination(data);
+          });
+          pagination.appendChild(button);
+        }
+      };
+
+      const updateChart = (data) => {
+        const ctx = document.getElementById("chart").getContext("2d");
+        const chartType = document.getElementById("chartType").value;
+
+        // Function to adjust color saturation
+        const adjustSaturation = (hex, saturation) => {
+          hex = hex.replace(/^#/, "");
+          if (hex.length === 3)
+            hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+          const r = parseInt(hex.substring(0, 2), 16) / 255;
+          const g = parseInt(hex.substring(2, 4), 16) / 255;
+          const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const delta = max - min;
+
+          let h = 0;
+          if (delta !== 0) {
+            if (max === r) h = ((g - b) / delta) % 6;
+            if (max === g) h = (b - r) / delta + 2;
+            if (max === b) h = (r - g) / delta + 4;
+          }
+          h = Math.round(h * 60);
+          if (h < 0) h += 360;
+
+          let s = max === 0 ? 0 : delta / max;
+          let l = (max + min) / 2;
+
+          s = saturation / 100;
+
+          const c = (1 - Math.abs(2 * l - 1)) * s;
+          const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+          const m = l - c / 2;
+
+          let r1, g1, b1;
+          if (0 <= h && h < 60) {
+            r1 = c;
+            g1 = x;
+            b1 = 0;
+          } else if (60 <= h && h < 120) {
+            r1 = x;
+            g1 = c;
+            b1 = 0;
+          } else if (120 <= h && h < 180) {
+            r1 = 0;
+            g1 = c;
+            b1 = x;
+          } else if (180 <= h && h < 240) {
+            r1 = 0;
+            g1 = x;
+            b1 = c;
+          } else if (240 <= h && h < 300) {
+            r1 = x;
+            g1 = 0;
+            b1 = c;
+          } else if (300 <= h && h < 360) {
+            r1 = c;
+            g1 = 0;
+            b1 = x;
+          }
+
+          r1 = Math.round((r1 + m) * 255);
+          g1 = Math.round((g1 + m) * 255);
+          b1 = Math.round((b1 + m) * 255);
+
+          return `rgb(${r1}, ${g1}, ${b1})`;
+        };
+
+        const baseColors = [
+          "#4e79a7",
+          "#f28e2c",
+          "#e15759",
+          "#76b7b2",
+          "#59a14f",
+          "#edc948",
+          "#b07aa1",
+          "#ff9da8",
+          "#9c755f",
+          "#bab0ac",
+        ];
+
+        const backgroundColors = data.map((_, index) => {
+          const baseColor = baseColors[index % baseColors.length]; // Cycle through base colors
+          return adjustSaturation(baseColor, colorSaturation);
+        });
+
+        const chartData = {
+          labels: data.map((row) => row["productname"]),
+          datasets: [
+            {
+              label: "Amount",
+              data: data.map(
+                (row) => parseFloat(row["Amount"].replace("$", "")) || 0
+              ),
+              backgroundColor: backgroundColors,
+              borderWidth: 1,
+              borderColor: "#fff",
+            },
+          ],
+        };
+
+        const chartOptions = {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: "Amount",
+              },
+              grid: {
+                color: "rgba(0, 0, 0, 0.1)",
+              },
+            },
+            x: {
+              title: {
+                display: true,
+                text: "Product Name",
+              },
+              grid: {
+                color: "rgba(0, 0, 0, 0.1)",
+              },
+            },
+          },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: {
+                color: "#333",
+                font: {
+                  size: 12,
+                },
+              },
+            },
+            title: {
+              display: true,
+              text: "Product Amount Chart",
+              color: "#333",
+              font: {
+                size: 16,
+              },
+            },
+          },
+        };
+
+        if (window.myChart) {
+          window.myChart.destroy();
+        }
+
+        window.myChart = new Chart(ctx, {
+          type: chartType,
+          data: chartData,
+          options: chartOptions,
+        });
+      };
+
+      const exportData = () => {
+        const data = originalData.map((row) => ({
+          "s/n": row["s/n"],
+          productname: row["productname"],
+          Unit: row["Unit"],
+          product_quantity: row["product_quantity"],
+          "Unit Price": row["Unit Price"],
+          Amount: row["Amount"],
+        }));
+
+        const csv = Papa.unparse(data);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "exported_data.csv";
+        link.click();
+      };
+
+      document
+        .getElementById("csvFile")
+        .addEventListener("change", handleFileChange);
+      document
+        .getElementById("search")
+        .addEventListener("input", handleSearchInput);
+      document
+        .getElementById("chartType")
+        .addEventListener("change", () => updateChart(filteredData));
+      document
+        .getElementById("colorSaturation")
+        .addEventListener("input", (e) => {
+          colorSaturation = e.target.value;
+          updateChart(filteredData);
+        });
     </script>
   </body>
 </html>
