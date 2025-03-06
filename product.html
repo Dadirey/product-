@@ -40,11 +40,15 @@
           </tbody>
         </table>
       </div>
+      <div class="mt-8">
+        <canvas id="salesChart"></canvas>
+      </div>
     </div>
     <script>
       let originalData = [];
       let filteredData = [];
       let selectedRow = null;
+      let chartInstance = null;
 
       document.getElementById("csvFile").addEventListener("change", (event) => {
         const file = event.target.files[0];
@@ -59,6 +63,7 @@
               filteredData = [...originalData];
               localStorage.setItem("csvData", JSON.stringify(originalData)); // Save to localStorage
               displayData(filteredData);
+              updateChart(filteredData);
             },
           });
         };
@@ -73,6 +78,7 @@
           )
         );
         displayData(filteredData);
+        updateChart(filteredData);
       });
 
       function displayData(data) {
@@ -95,6 +101,37 @@
         selectedRow = rowElement;
       }
 
+      function updateChart(data) {
+        const labels = data.map((row, index) => row[Object.keys(row)[0]] || `Item ${index + 1}`);
+        const values = data.map((row) => parseFloat(row[Object.keys(row)[1]]) || 0);
+
+        const ctx = document.getElementById("salesChart").getContext("2d");
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+        chartInstance = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: [{
+              label: "Sales Data",
+              data: values,
+              backgroundColor: values.map(value => `hsl(${(value / Math.max(...values)) * 120}, 80%, 60%)`),
+              borderColor: "#4A90E2",
+              borderWidth: 1,
+            }],
+          },
+          options: {
+            responsive: true,
+            scales: {
+              y: {
+                beginAtZero: true,
+              },
+            },
+          },
+        });
+      }
+
       // Load saved data on refresh
       window.addEventListener("load", () => {
         const savedData = localStorage.getItem("csvData");
@@ -102,6 +139,7 @@
           originalData = JSON.parse(savedData);
           filteredData = [...originalData];
           displayData(filteredData);
+          updateChart(filteredData);
         }
       });
     </script>
