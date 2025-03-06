@@ -16,36 +16,18 @@
       <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">
         Sales Dashboard
       </h1>
-      <div
-        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-center"
-      >
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-center">
         <div>
-          <label
-            for="csvFile"
-            class="block text-gray-700 text-sm font-bold mb-2"
-          >
+          <label for="csvFile" class="block text-gray-700 text-sm font-bold mb-2">
             Choose CSV File:
           </label>
-          <input
-            type="file"
-            id="csvFile"
-            accept=".csv"
-            class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none"
-          />
+          <input type="file" id="csvFile" accept=".csv" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
         </div>
         <div>
-          <label
-            for="search"
-            class="block text-gray-700 text-sm font-bold mb-2"
-          >
+          <label for="search" class="block text-gray-700 text-sm font-bold mb-2">
             Search:
           </label>
-          <input
-            type="text"
-            id="search"
-            placeholder="Product Name or S/N"
-            class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none"
-          />
+          <input type="text" id="search" placeholder="Product Name or S/N" class="shadow border rounded w-full py-2 px-3 text-gray-700 focus:outline-none" />
         </div>
       </div>
       <div class="overflow-x-auto bg-white rounded-lg shadow-md">
@@ -62,6 +44,7 @@
     <script>
       let originalData = [];
       let filteredData = [];
+      let selectedRow = null;
 
       document.getElementById("csvFile").addEventListener("change", (event) => {
         const file = event.target.files[0];
@@ -74,7 +57,7 @@
             complete: (results) => {
               originalData = results.data;
               filteredData = [...originalData];
-              updateTableHeaders(results.meta.fields);
+              localStorage.setItem("csvData", JSON.stringify(originalData)); // Save to localStorage
               displayData(filteredData);
             },
           });
@@ -92,36 +75,35 @@
         displayData(filteredData);
       });
 
-      function updateTableHeaders(headers) {
-        const tableHead = document.getElementById("tableHead");
-        tableHead.innerHTML = `<tr>${headers
-          .map(
-            (header) =>
-              `<th class='px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'>${header}</th>`
-          )
-          .join("")}</tr>`;
-      }
-
       function displayData(data) {
         const tableBody = document.getElementById("tableBody");
         tableBody.innerHTML =
           data.length === 0
             ? `<tr><td colspan="6" class="text-center py-4">No matching data found.</td></tr>`
-            : data
-                .map(
-                  (row) => `
-                <tr>
-                  ${Object.values(row)
-                    .map(
-                      (value) =>
-                        `<td class="px-6 py-4 text-sm text-gray-900">${value}</td>`
-                    )
-                    .join("")}
+            : data.map((row, index) => `
+                <tr class="cursor-pointer hover:bg-gray-100" onclick="handleRowClick(this, ${index})">
+                  ${Object.values(row).map(value => `<td class="px-6 py-4 text-sm text-gray-900">${value}</td>`).join("")}
                 </tr>
-              `
-                )
-                .join("");
+              `).join("");
       }
+
+      function handleRowClick(rowElement, index) {
+        if (selectedRow) {
+          selectedRow.classList.remove("bg-blue-200");
+        }
+        rowElement.classList.add("bg-blue-200");
+        selectedRow = rowElement;
+      }
+
+      // Load saved data on refresh
+      window.addEventListener("load", () => {
+        const savedData = localStorage.getItem("csvData");
+        if (savedData) {
+          originalData = JSON.parse(savedData);
+          filteredData = [...originalData];
+          displayData(filteredData);
+        }
+      });
     </script>
   </body>
 </html>
